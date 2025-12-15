@@ -658,7 +658,7 @@ export default function Purchases() {
                     <input
                       type="file"
                       accept="image/*"
-                      onChange={(e) => setUpdateDepositSlip(e.files?.[0] || null)}
+                      onChange={(e) => setUpdateDepositSlip(e.target.files?.[0] || null)}
                       className="hidden"
                     />
                   </label>

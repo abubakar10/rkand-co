@@ -148,7 +148,7 @@ export default function Sales() {
         formDataToSend.append('image', imageFile)
       }
 
-      const response = await axios.post(`${API_URL}/ledger/sales`, formDataToSend, {
+      await axios.post(`${API_URL}/ledger/sales`, formDataToSend, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -672,7 +672,7 @@ export default function Sales() {
                     <input
                       type="file"
                       accept="image/*"
-                      onChange={(e) => setUpdateImage(e.files?.[0] || null)}
+                      onChange={(e) => setUpdateImage(e.target.files?.[0] || null)}
                       className="hidden"
                     />
                   </label>

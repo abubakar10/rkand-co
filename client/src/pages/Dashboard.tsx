@@ -66,14 +66,14 @@ export default function Dashboard() {
       value: `Rs ${stats?.totals.netReceivable.toLocaleString('en-IN') || 0}`,
       icon: DollarSign,
       color: 'bg-yellow-500',
-      change: stats?.totals.netReceivable >= 0 ? 'positive' : 'negative',
+      change: (stats?.totals.netReceivable ?? 0) >= 0 ? 'positive' : 'negative',
     },
     {
       title: 'Net Payable',
       value: `Rs ${stats?.totals.netPayable.toLocaleString('en-IN') || 0}`,
       icon: TrendingDown,
       color: 'bg-red-500',
-      change: stats?.totals.netPayable >= 0 ? 'positive' : 'negative',
+      change: (stats?.totals.netPayable ?? 0) >= 0 ? 'positive' : 'negative',
     },
   ]
 
