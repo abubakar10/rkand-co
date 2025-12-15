@@ -22,13 +22,17 @@ const userSchema = new Schema<IUser>(
   { timestamps: true }
 );
 
-userSchema.pre("save" as any, async function (next: CallbackWithoutResultAndOptionalError) {
+(userSchema as any).pre("save", async function (this: IUser, next: CallbackWithoutResultAndOptionalError) {
   if (!this.isModified("password")) {
     return next();
   }
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-  next();
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error: any) {
+    next(error);
+  }
 });
 
 userSchema.methods.comparePassword = async function (candidate: string) {

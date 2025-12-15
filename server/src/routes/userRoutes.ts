@@ -5,7 +5,8 @@ import { User } from "../models/User";
 
 const router = Router();
 
-router.use(authenticate, authorize(["admin"]));
+router.use(authenticate);
+router.use(authorize(["admin"]));
 
 router.get("/", async (_req: Request, res: Response) => {
   const users = await User.find({}, "name email role active createdAt");
@@ -15,20 +16,62 @@ router.get("/", async (_req: Request, res: Response) => {
 router.post(
   "/",
   [
-    body("name").notEmpty(),
-    body("email").isEmail(),
-    body("password").isLength({ min: 6 }),
-    body("role").isIn(["admin", "manager", "accountant", "viewer"]),
+    body("name").notEmpty().trim().withMessage("Name is required"),
+    body("email").isEmail().normalizeEmail().withMessage("Valid email is required"),
+    body("password").isLength({ min: 6 }).withMessage("Password must be at least 6 characters"),
+    body("role").optional().isIn(["admin", "manager", "accountant", "viewer"]).withMessage("Invalid role"),
   ],
   async (req: AuthRequest, res: Response) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
 
-    const exists = await User.findOne({ email: req.body.email });
-    if (exists) return res.status(409).json({ message: "Email already exists" });
-    const user = new User(req.body);
-    await user.save();
-    res.status(201).json({ user: { id: user._id.toString(), name: user.name, email: user.email, role: user.role } });
+      const email = req.body.email?.toLowerCase().trim();
+      const exists = await User.findOne({ email });
+      if (exists) {
+        return res.status(409).json({ message: "Email already exists" });
+      }
+      
+      const user = new User({
+        name: req.body.name.trim(),
+        email: email,
+        password: req.body.password,
+        role: req.body.role || "viewer",
+        active: true,
+      });
+      
+      await user.save();
+      
+      res.status(201).json({ 
+        user: { 
+          id: user._id.toString(), 
+          name: user.name, 
+          email: user.email, 
+          role: user.role 
+        } 
+      });
+    } catch (err: any) {
+      console.error("Error creating user:", err);
+      console.error("Error stack:", err.stack);
+      
+      // Handle specific MongoDB errors
+      if (err.code === 11000) {
+        return res.status(409).json({ message: "Email already exists" });
+      }
+      
+      if (err.name === 'ValidationError') {
+        return res.status(400).json({ 
+          message: "Validation error",
+          errors: Object.values(err.errors).map((e: any) => e.message)
+        });
+      }
+      
+      res.status(500).json({ 
+        message: err.message || "Failed to create user"
+      });
+    }
   }
 );
 

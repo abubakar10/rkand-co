@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { Plus, CheckCircle, XCircle, Clock, Image as ImageIcon } from 'lucide-react'
+import { Plus, CheckCircle, XCircle, Clock, Image as ImageIcon, Edit2, X } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 
@@ -36,6 +36,15 @@ export default function Sales() {
   const [customers, setCustomers] = useState<string[]>([])
   const [customerSuggestions, setCustomerSuggestions] = useState<string[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
+  const [editingSale, setEditingSale] = useState<Sale | null>(null)
+  const [updateData, setUpdateData] = useState({
+    paymentStatus: 'unpaid' as 'paid' | 'unpaid' | 'partial',
+    paidAmount: '',
+    notes: '',
+  })
+  const [updateImage, setUpdateImage] = useState<File | null>(null)
+  const [updating, setUpdating] = useState(false)
+  const [updateError, setUpdateError] = useState('')
 
   useEffect(() => {
     fetchSales()
@@ -50,8 +59,18 @@ export default function Sales() {
           Authorization: `Bearer ${token}`
         }
       } : {}
-      const res = await axios.get(`${API_URL}/customers`, config)
-      setCustomers(res.data.customers.map((c: any) => c.name))
+      
+      // Fetch from customers endpoint
+      const customersRes = await axios.get(`${API_URL}/customers`, config)
+      const customerNames = customersRes.data.customers.map((c: any) => c.name)
+      
+      // Also fetch from sales to get all unique customer names
+      const salesRes = await axios.get(`${API_URL}/ledger/sales`, config)
+      const saleCustomerNames = [...new Set(salesRes.data.sales.map((s: Sale) => s.customerName))]
+      
+      // Combine and remove duplicates
+      const allCustomers = [...new Set([...customerNames, ...saleCustomerNames])].sort()
+      setCustomers(allCustomers)
     } catch (err) {
       console.error('Failed to fetch customers', err)
     }
@@ -63,8 +82,8 @@ export default function Sales() {
       const filtered = customers.filter(c => 
         c.toLowerCase().includes(value.toLowerCase())
       )
-      setCustomerSuggestions(filtered.slice(0, 5))
-      setShowSuggestions(filtered.length > 0)
+      setCustomerSuggestions(filtered.slice(0, 10)) // Show up to 10 suggestions
+      setShowSuggestions(filtered.length > 0 && value.trim().length > 0)
     } else {
       setCustomerSuggestions([])
       setShowSuggestions(false)
@@ -183,6 +202,58 @@ export default function Sales() {
 
   const totalAmount = (sale: Sale) => sale.totalAmount || 0
 
+  const handleUpdateClick = (sale: Sale) => {
+    setEditingSale(sale)
+    setUpdateData({
+      paymentStatus: sale.paymentStatus,
+      paidAmount: sale.paidAmount?.toString() || '',
+      notes: '',
+    })
+    setUpdateImage(null)
+    setUpdateError('')
+  }
+
+  const handleUpdateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingSale) return
+
+    setUpdating(true)
+    setUpdateError('')
+
+    try {
+      const formDataToSend = new FormData()
+      formDataToSend.append('paymentStatus', updateData.paymentStatus)
+      if (updateData.paidAmount) {
+        formDataToSend.append('paidAmount', updateData.paidAmount)
+      }
+      if (updateData.notes) {
+        formDataToSend.append('notes', updateData.notes)
+      }
+      if (updateImage) {
+        formDataToSend.append('image', updateImage)
+      }
+
+      await axios.put(`${API_URL}/ledger/sales/${editingSale._id}`, formDataToSend, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      })
+      await fetchSales()
+      setEditingSale(null)
+      setUpdateData({
+        paymentStatus: 'unpaid',
+        paidAmount: '',
+        notes: '',
+      })
+      setUpdateImage(null)
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.errors?.[0]?.msg || err.response?.data?.message || 'Failed to update sale'
+      setUpdateError(errorMessage)
+    } finally {
+      setUpdating(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -215,6 +286,10 @@ export default function Sales() {
                   onFocus={() => {
                     if (formData.customerName.trim()) {
                       handleCustomerInputChange(formData.customerName)
+                    } else if (customers.length > 0) {
+                      // Show all customers when focused and empty
+                      setCustomerSuggestions(customers.slice(0, 10))
+                      setShowSuggestions(true)
                     }
                   }}
                   onBlur={() => {
@@ -223,8 +298,8 @@ export default function Sales() {
                   }}
                   required
                   className="input"
-                  placeholder="Enter customer name"
-                  list="customer-list"
+                  placeholder="Type to search customers..."
+                  autoComplete="off"
                 />
                 {showSuggestions && customerSuggestions.length > 0 && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-auto">
@@ -232,9 +307,10 @@ export default function Sales() {
                       <div
                         key={customer}
                         onClick={() => selectCustomer(customer)}
-                        className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                        onMouseDown={(e) => e.preventDefault()} // Prevent input blur on click
+                        className="px-4 py-2 hover:bg-primary-50 cursor-pointer text-sm border-b border-gray-100 last:border-b-0 transition-colors"
                       >
-                        {customer}
+                        <span className="text-gray-900">{customer}</span>
                       </div>
                     ))}
                   </div>
@@ -433,6 +509,9 @@ export default function Sales() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Status
                   </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -481,10 +560,153 @@ export default function Sales() {
                         </span>
                       </div>
                     </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <button
+                        onClick={() => handleUpdateClick(sale)}
+                        className="text-primary-600 hover:text-primary-800 transition-colors flex items-center space-x-1"
+                        title="Update payment"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                        <span className="text-xs">Update</span>
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Update Sale Modal */}
+      {editingSale && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-xl font-semibold text-gray-900">Update Payment</h2>
+              <button
+                onClick={() => {
+                  setEditingSale(null)
+                  setUpdateError('')
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleUpdateSubmit} className="p-4 space-y-4">
+              {updateError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                  {updateError}
+                </div>
+              )}
+              <div>
+                <p className="text-sm text-gray-600 mb-2">
+                  <span className="font-medium">Customer:</span> {editingSale.customerName}
+                </p>
+                <p className="text-sm text-gray-600 mb-2">
+                  <span className="font-medium">Total Amount:</span> Rs {totalAmount(editingSale).toLocaleString('en-IN', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </p>
+                <p className="text-sm text-gray-600 mb-4">
+                  <span className="font-medium">Current Status:</span> <span className="capitalize">{editingSale.paymentStatus}</span>
+                  {editingSale.paidAmount && (
+                    <span className="ml-2">(Paid: Rs {editingSale.paidAmount.toLocaleString('en-IN', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })})</span>
+                  )}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Payment Status
+                </label>
+                <select
+                  value={updateData.paymentStatus}
+                  onChange={(e) =>
+                    setUpdateData({
+                      ...updateData,
+                      paymentStatus: e.target.value as 'paid' | 'unpaid' | 'partial',
+                    })
+                  }
+                  className="input"
+                >
+                  <option value="unpaid">Unpaid</option>
+                  <option value="partial">Partially Paid</option>
+                  <option value="paid">Paid</option>
+                </select>
+              </div>
+              {updateData.paymentStatus !== 'unpaid' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Paid Amount (Rs)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={updateData.paidAmount}
+                    onChange={(e) => setUpdateData({ ...updateData, paidAmount: e.target.value })}
+                    className="input"
+                    placeholder="0.00"
+                    max={totalAmount(editingSale)}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Maximum: Rs {totalAmount(editingSale).toLocaleString('en-IN', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </p>
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Update Image (Optional)
+                </label>
+                <div className="flex items-center space-x-4">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <ImageIcon className="w-5 h-5 text-gray-600" />
+                    <span className="text-sm text-gray-700">Choose Image</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setUpdateImage(e.files?.[0] || null)}
+                      className="hidden"
+                    />
+                  </label>
+                  {updateImage && (
+                    <span className="text-sm text-gray-600">{updateImage.name}</span>
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Notes (Optional)</label>
+                <textarea
+                  value={updateData.notes}
+                  onChange={(e) => setUpdateData({ ...updateData, notes: e.target.value })}
+                  className="input"
+                  rows={2}
+                  placeholder="Additional notes"
+                />
+              </div>
+              <div className="flex space-x-3 pt-4">
+                <button type="submit" disabled={updating} className="btn btn-primary flex-1">
+                  {updating ? 'Updating...' : 'Update Payment'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingSale(null)
+                    setUpdateError('')
+                  }}
+                  className="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

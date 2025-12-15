@@ -103,6 +103,66 @@ router.post(
   }
 );
 
+router.put(
+  "/purchases/:id",
+  upload.single("depositSlip"),
+  [
+    body("paymentStatus").optional().isIn(["paid", "unpaid", "partial"]).withMessage("Invalid payment status"),
+    body("paidAmount").optional().custom((value) => {
+      if (value === undefined || value === "") return true;
+      const num = parseFloat(value);
+      if (isNaN(num) || num < 0) {
+        throw new Error("Paid amount must be a positive number");
+      }
+      return true;
+    }),
+  ],
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+      const purchase = await SupplierPurchase.findById(req.params.id);
+      if (!purchase) {
+        return res.status(404).json({ message: "Purchase not found" });
+      }
+
+      const updateData: any = {};
+      
+      if (req.body.paymentStatus) {
+        updateData.paymentStatus = req.body.paymentStatus;
+      }
+      
+      if (req.body.paidAmount !== undefined) {
+        const paidAmount = parseFloat(req.body.paidAmount) || 0;
+        // Cap paidAmount at totalAmount
+        updateData.paidAmount = Math.min(paidAmount, purchase.totalAmount);
+      }
+
+      if (req.file) {
+        updateData.depositSlipUrl = `/uploads/${req.file.filename}`;
+      }
+
+      if (req.body.notes !== undefined) {
+        updateData.notes = req.body.notes;
+      }
+
+      const updatedPurchase = await SupplierPurchase.findByIdAndUpdate(
+        req.params.id,
+        updateData,
+        { new: true }
+      );
+
+      res.json({ purchase: updatedPurchase });
+    } catch (err: any) {
+      console.error("Error updating purchase:", err);
+      res.status(500).json({ message: err.message || "Failed to update purchase" });
+    }
+  }
+);
+
 router.get("/sales", async (_req: Request, res: Response) => {
   const sales = await CustomerSale.find().sort({ date: -1 });
   res.json({ sales });
@@ -216,6 +276,66 @@ router.post(
     } catch (error: any) {
       console.error("Error creating sale:", error);
       res.status(500).json({ message: error.message || "Failed to create sale" });
+    }
+  }
+);
+
+router.put(
+  "/sales/:id",
+  upload.single("image"),
+  [
+    body("paymentStatus").optional().isIn(["paid", "unpaid", "partial"]).withMessage("Invalid payment status"),
+    body("paidAmount").optional().custom((value) => {
+      if (value === undefined || value === "") return true;
+      const num = parseFloat(value);
+      if (isNaN(num) || num < 0) {
+        throw new Error("Paid amount must be a positive number");
+      }
+      return true;
+    }),
+  ],
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+      const sale = await CustomerSale.findById(req.params.id);
+      if (!sale) {
+        return res.status(404).json({ message: "Sale not found" });
+      }
+
+      const updateData: any = {};
+      
+      if (req.body.paymentStatus) {
+        updateData.paymentStatus = req.body.paymentStatus;
+      }
+      
+      if (req.body.paidAmount !== undefined) {
+        const paidAmount = parseFloat(req.body.paidAmount) || 0;
+        // Cap paidAmount at totalAmount
+        updateData.paidAmount = Math.min(paidAmount, sale.totalAmount);
+      }
+
+      if (req.file) {
+        updateData.imageUrl = `/uploads/${req.file.filename}`;
+      }
+
+      if (req.body.notes !== undefined) {
+        updateData.notes = req.body.notes;
+      }
+
+      const updatedSale = await CustomerSale.findByIdAndUpdate(
+        req.params.id,
+        updateData,
+        { new: true }
+      );
+
+      res.json({ sale: updatedSale });
+    } catch (err: any) {
+      console.error("Error updating sale:", err);
+      res.status(500).json({ message: err.message || "Failed to update sale" });
     }
   }
 );

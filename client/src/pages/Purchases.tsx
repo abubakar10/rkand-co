@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { Plus, CheckCircle, XCircle, Clock, Image as ImageIcon } from 'lucide-react'
+import { Plus, CheckCircle, XCircle, Clock, Image as ImageIcon, Edit2, X } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 
@@ -37,6 +37,14 @@ export default function Purchases() {
   const [suppliers, setSuppliers] = useState<string[]>([])
   const [supplierSuggestions, setSupplierSuggestions] = useState<string[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
+  const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null)
+  const [updateData, setUpdateData] = useState({
+    paymentStatus: 'unpaid' as 'paid' | 'unpaid' | 'partial',
+    paidAmount: '',
+    notes: '',
+  })
+  const [updateDepositSlip, setUpdateDepositSlip] = useState<File | null>(null)
+  const [updating, setUpdating] = useState(false)
 
   useEffect(() => {
     fetchPurchases()
@@ -175,6 +183,57 @@ export default function Purchases() {
   }
 
   const totalAmount = (p: Purchase) => p.totalAmount || 0
+
+  const handleUpdateClick = (purchase: Purchase) => {
+    setEditingPurchase(purchase)
+    setUpdateData({
+      paymentStatus: purchase.paymentStatus,
+      paidAmount: purchase.paidAmount?.toString() || '',
+      notes: '',
+    })
+    setUpdateDepositSlip(null)
+  }
+
+  const handleUpdateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingPurchase) return
+
+    setUpdating(true)
+    setError('')
+
+    try {
+      const formDataToSend = new FormData()
+      formDataToSend.append('paymentStatus', updateData.paymentStatus)
+      if (updateData.paidAmount) {
+        formDataToSend.append('paidAmount', updateData.paidAmount)
+      }
+      if (updateData.notes) {
+        formDataToSend.append('notes', updateData.notes)
+      }
+      if (updateDepositSlip) {
+        formDataToSend.append('depositSlip', updateDepositSlip)
+      }
+
+      await axios.put(`${API_URL}/ledger/purchases/${editingPurchase._id}`, formDataToSend, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      })
+      await fetchPurchases()
+      setEditingPurchase(null)
+      setUpdateData({
+        paymentStatus: 'unpaid',
+        paidAmount: '',
+        notes: '',
+      })
+      setUpdateDepositSlip(null)
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.errors?.[0]?.msg || err.response?.data?.message || 'Failed to update purchase'
+      setError(errorMessage)
+    } finally {
+      setUpdating(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -436,6 +495,9 @@ export default function Purchases() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Deposit Slip
                   </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -484,10 +546,153 @@ export default function Purchases() {
                         <span className="text-gray-400">-</span>
                       )}
                     </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <button
+                        onClick={() => handleUpdateClick(purchase)}
+                        className="text-primary-600 hover:text-primary-800 transition-colors flex items-center space-x-1"
+                        title="Update payment"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                        <span className="text-xs">Update</span>
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Update Purchase Modal */}
+      {editingPurchase && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-xl font-semibold text-gray-900">Update Payment</h2>
+              <button
+                onClick={() => {
+                  setEditingPurchase(null)
+                  setError('')
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleUpdateSubmit} className="p-4 space-y-4">
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+              <div>
+                <p className="text-sm text-gray-600 mb-2">
+                  <span className="font-medium">Supplier:</span> {editingPurchase.supplierName}
+                </p>
+                <p className="text-sm text-gray-600 mb-2">
+                  <span className="font-medium">Total Amount:</span> Rs {totalAmount(editingPurchase).toLocaleString('en-IN', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </p>
+                <p className="text-sm text-gray-600 mb-4">
+                  <span className="font-medium">Current Status:</span> <span className="capitalize">{editingPurchase.paymentStatus}</span>
+                  {editingPurchase.paidAmount && (
+                    <span className="ml-2">(Paid: Rs {editingPurchase.paidAmount.toLocaleString('en-IN', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })})</span>
+                  )}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Payment Status
+                </label>
+                <select
+                  value={updateData.paymentStatus}
+                  onChange={(e) =>
+                    setUpdateData({
+                      ...updateData,
+                      paymentStatus: e.target.value as 'paid' | 'unpaid' | 'partial',
+                    })
+                  }
+                  className="input"
+                >
+                  <option value="unpaid">Unpaid</option>
+                  <option value="partial">Partially Paid</option>
+                  <option value="paid">Paid</option>
+                </select>
+              </div>
+              {updateData.paymentStatus !== 'unpaid' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Paid Amount (Rs)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={updateData.paidAmount}
+                    onChange={(e) => setUpdateData({ ...updateData, paidAmount: e.target.value })}
+                    className="input"
+                    placeholder="0.00"
+                    max={totalAmount(editingPurchase)}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Maximum: Rs {totalAmount(editingPurchase).toLocaleString('en-IN', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </p>
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Update Deposit Slip (Optional)
+                </label>
+                <div className="flex items-center space-x-4">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <ImageIcon className="w-5 h-5 text-gray-600" />
+                    <span className="text-sm text-gray-700">Choose Image</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setUpdateDepositSlip(e.files?.[0] || null)}
+                      className="hidden"
+                    />
+                  </label>
+                  {updateDepositSlip && (
+                    <span className="text-sm text-gray-600">{updateDepositSlip.name}</span>
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Notes (Optional)</label>
+                <textarea
+                  value={updateData.notes}
+                  onChange={(e) => setUpdateData({ ...updateData, notes: e.target.value })}
+                  className="input"
+                  rows={2}
+                  placeholder="Additional notes"
+                />
+              </div>
+              <div className="flex space-x-3 pt-4">
+                <button type="submit" disabled={updating} className="btn btn-primary flex-1">
+                  {updating ? 'Updating...' : 'Update Payment'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingPurchase(null)
+                    setError('')
+                  }}
+                  className="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
