@@ -14,7 +14,27 @@ import supplierRoutes from "./routes/supplierRoutes";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
-app.use(cors({ origin: env.clientUrl, credentials: true }));
+
+// CORS configuration - normalize origin to handle trailing slash issues
+const corsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // Normalize origin by removing trailing slash
+    const normalizedOrigin = origin.replace(/\/+$/, '');
+    const normalizedClientUrl = env.clientUrl.replace(/\/+$/, '');
+    
+    if (normalizedOrigin === normalizedClientUrl) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 app.use(morgan("dev"));
