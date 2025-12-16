@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
 import { TrendingUp, TrendingDown, DollarSign, FileText } from 'lucide-react'
+import DateFilter, { DateFilterType } from '../components/DateFilter'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 
@@ -17,23 +18,146 @@ interface BalanceData {
   }
 }
 
+interface Sale {
+  _id: string
+  customerName: string
+  totalAmount: number
+  paidAmount?: number
+  date: string
+}
+
+interface Purchase {
+  _id: string
+  supplierName: string
+  totalAmount: number
+  paidAmount?: number
+  date: string
+}
+
 export default function BalanceSheet() {
   const [balance, setBalance] = useState<BalanceData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [filterStartDate, setFilterStartDate] = useState<string | undefined>()
+  const [filterEndDate, setFilterEndDate] = useState<string | undefined>()
+  const [selectedCustomerFilter, setSelectedCustomerFilter] = useState('')
+  const [selectedSupplierFilter, setSelectedSupplierFilter] = useState('')
+  const [customers, setCustomers] = useState<string[]>([])
+  const [suppliers, setSuppliers] = useState<string[]>([])
+  const [allSales, setAllSales] = useState<Sale[]>([])
+  const [allPurchases, setAllPurchases] = useState<Purchase[]>([])
 
   useEffect(() => {
-    fetchBalance()
+    fetchCustomersAndSuppliers()
+    fetchAllData()
   }, [])
 
-  const fetchBalance = async () => {
+  useEffect(() => {
+    calculateBalance()
+  }, [filterStartDate, filterEndDate, selectedCustomerFilter, selectedSupplierFilter, allSales, allPurchases])
+
+  const fetchCustomersAndSuppliers = async () => {
     try {
-      const res = await axios.get(`${API_URL}/ledger/balance`)
-      setBalance(res.data)
+      const token = localStorage.getItem('token')
+      const config = token ? {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      } : {}
+
+      // Fetch customers
+      const customersRes = await axios.get(`${API_URL}/customers`, config)
+      const customerNames = customersRes.data.customers.map((c: any) => c.name)
+      
+      // Fetch suppliers
+      const suppliersRes = await axios.get(`${API_URL}/suppliers`, config)
+      const supplierNames = suppliersRes.data.suppliers.map((s: any) => s.name)
+
+      setCustomers(customerNames.sort())
+      setSuppliers(supplierNames.sort())
     } catch (err) {
-      console.error('Failed to fetch balance', err)
+      console.error('Failed to fetch customers/suppliers', err)
+    }
+  }
+
+  const fetchAllData = async () => {
+    try {
+      setLoading(true)
+      const [salesRes, purchasesRes] = await Promise.all([
+        axios.get(`${API_URL}/ledger/sales`),
+        axios.get(`${API_URL}/ledger/purchases`)
+      ])
+      setAllSales(salesRes.data.sales)
+      setAllPurchases(purchasesRes.data.purchases)
+    } catch (err) {
+      console.error('Failed to fetch data', err)
     } finally {
       setLoading(false)
     }
+  }
+
+  const calculateBalance = () => {
+    let filteredSales = [...allSales]
+    let filteredPurchases = [...allPurchases]
+
+    // Apply date filter
+    if (filterStartDate && filterEndDate) {
+      const start = new Date(filterStartDate)
+      const end = new Date(filterEndDate)
+      filteredSales = filteredSales.filter(sale => {
+        const saleDate = new Date(sale.date)
+        return saleDate >= start && saleDate <= end
+      })
+      filteredPurchases = filteredPurchases.filter(purchase => {
+        const purchaseDate = new Date(purchase.date)
+        return purchaseDate >= start && purchaseDate <= end
+      })
+    }
+
+    // Apply customer filter
+    if (selectedCustomerFilter) {
+      filteredSales = filteredSales.filter(sale => sale.customerName === selectedCustomerFilter)
+    }
+
+    // Apply supplier filter
+    if (selectedSupplierFilter) {
+      filteredPurchases = filteredPurchases.filter(purchase => purchase.supplierName === selectedSupplierFilter)
+    }
+
+    // Calculate totals
+    const totalSales = filteredSales.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0)
+    const totalPurchases = filteredPurchases.reduce((sum, purchase) => sum + (purchase.totalAmount || 0), 0)
+    
+    const totalSalesPaid = filteredSales.reduce((sum, sale) => sum + (sale.paidAmount || 0), 0)
+    const totalPurchasesPaid = filteredPurchases.reduce((sum, purchase) => sum + (purchase.paidAmount || 0), 0)
+    
+    const netReceivable = totalSales - totalSalesPaid
+    const netPayable = totalPurchases - totalPurchasesPaid
+
+    setBalance({
+      totals: {
+        sales: totalSales,
+        purchases: totalPurchases,
+        netReceivable,
+        netPayable
+      },
+      counts: {
+        sales: filteredSales.length,
+        purchases: filteredPurchases.length
+      }
+    })
+  }
+
+  const handleFilterChange = (_filter: DateFilterType, startDate?: string, endDate?: string) => {
+    setFilterStartDate(startDate)
+    setFilterEndDate(endDate)
+  }
+
+  const handleCustomerFilterChange = (customer: string) => {
+    setSelectedCustomerFilter(customer)
+  }
+
+  const handleSupplierFilterChange = (supplier: string) => {
+    setSelectedSupplierFilter(supplier)
   }
 
   if (loading) {
@@ -55,6 +179,18 @@ export default function BalanceSheet() {
         <h1 className="text-3xl font-bold text-gray-900">Balance Sheet</h1>
         <p className="text-gray-600 mt-1">Financial overview and summary</p>
       </div>
+
+      <DateFilter
+        onFilterChange={handleFilterChange}
+        showCustomerFilter={true}
+        showSupplierFilter={true}
+        customers={customers}
+        suppliers={suppliers}
+        selectedCustomer={selectedCustomerFilter}
+        selectedSupplier={selectedSupplierFilter}
+        onCustomerChange={handleCustomerFilterChange}
+        onSupplierChange={handleSupplierFilterChange}
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="card">

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { Plus, CheckCircle, XCircle, Clock, Image as ImageIcon, Edit2, X } from 'lucide-react'
+import DateFilter, { DateFilterType } from '../components/DateFilter'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 
@@ -45,11 +46,20 @@ export default function Sales() {
   const [updateImage, setUpdateImage] = useState<File | null>(null)
   const [updating, setUpdating] = useState(false)
   const [updateError, setUpdateError] = useState('')
+  const [dateFilter, setDateFilter] = useState<DateFilterType>('all')
+  const [filterStartDate, setFilterStartDate] = useState<string | undefined>()
+  const [filterEndDate, setFilterEndDate] = useState<string | undefined>()
+  const [selectedCustomerFilter, setSelectedCustomerFilter] = useState('')
+  const [allSales, setAllSales] = useState<Sale[]>([])
 
   useEffect(() => {
     fetchSales()
     fetchCustomers()
   }, [])
+
+  useEffect(() => {
+    applyFilters()
+  }, [dateFilter, filterStartDate, filterEndDate, selectedCustomerFilter, allSales])
 
   const fetchCustomers = async () => {
     try {
@@ -98,12 +108,48 @@ export default function Sales() {
   const fetchSales = async () => {
     try {
       const res = await axios.get(`${API_URL}/ledger/sales`)
-      setSales(res.data.sales)
+      setAllSales(res.data.sales)
+      applyFiltersToData(res.data.sales)
     } catch (err) {
       console.error('Failed to fetch sales', err)
     } finally {
       setLoading(false)
     }
+  }
+
+  const applyFiltersToData = (data: Sale[]) => {
+    let filtered = [...data]
+
+    // Apply date filter
+    if (filterStartDate && filterEndDate) {
+      const start = new Date(filterStartDate)
+      const end = new Date(filterEndDate)
+      filtered = filtered.filter(sale => {
+        const saleDate = new Date(sale.date)
+        return saleDate >= start && saleDate <= end
+      })
+    }
+
+    // Apply customer filter
+    if (selectedCustomerFilter) {
+      filtered = filtered.filter(sale => sale.customerName === selectedCustomerFilter)
+    }
+
+    setSales(filtered)
+  }
+
+  const applyFilters = () => {
+    applyFiltersToData(allSales)
+  }
+
+  const handleFilterChange = (filter: DateFilterType, startDate?: string, endDate?: string) => {
+    setDateFilter(filter)
+    setFilterStartDate(startDate)
+    setFilterEndDate(endDate)
+  }
+
+  const handleCustomerFilterChange = (customer: string) => {
+    setSelectedCustomerFilter(customer)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -202,6 +248,12 @@ export default function Sales() {
 
   const totalAmount = (sale: Sale) => sale.totalAmount || 0
 
+  const calculateBalance = (sale: Sale) => {
+    const total = totalAmount(sale)
+    const paid = sale.paidAmount || 0
+    return total - paid
+  }
+
   const handleUpdateClick = (sale: Sale) => {
     setEditingSale(sale)
     setUpdateData({
@@ -269,6 +321,14 @@ export default function Sales() {
           <span>Add Sale</span>
         </button>
       </div>
+
+      <DateFilter
+        onFilterChange={handleFilterChange}
+        showCustomerFilter={true}
+        customers={customers}
+        selectedCustomer={selectedCustomerFilter}
+        onCustomerChange={handleCustomerFilterChange}
+      />
 
       {showForm && (
         <div className="card">
@@ -504,6 +564,12 @@ export default function Sales() {
                     Total
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Paid
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Balance
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Image
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -537,6 +603,27 @@ export default function Sales() {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
                       })}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      Rs {(sale.paidAmount || 0).toLocaleString('en-IN', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      {(() => {
+                        const balance = calculateBalance(sale)
+                        const isPaid = balance <= 0
+                        return (
+                          <span className={`text-sm font-medium ${isPaid ? 'text-green-600' : 'text-red-600'}`}>
+                            Rs {balance.toLocaleString('en-IN', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                            {isPaid ? ' (Paid)' : ' (Unpaid)'}
+                          </span>
+                        )
+                      })()}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       {sale.imageUrl ? (

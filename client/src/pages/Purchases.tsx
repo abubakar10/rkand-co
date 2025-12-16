@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { Plus, CheckCircle, XCircle, Clock, Image as ImageIcon, Edit2, X } from 'lucide-react'
+import DateFilter, { DateFilterType } from '../components/DateFilter'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 
@@ -45,11 +46,20 @@ export default function Purchases() {
   })
   const [updateDepositSlip, setUpdateDepositSlip] = useState<File | null>(null)
   const [updating, setUpdating] = useState(false)
+  const [dateFilter, setDateFilter] = useState<DateFilterType>('all')
+  const [filterStartDate, setFilterStartDate] = useState<string | undefined>()
+  const [filterEndDate, setFilterEndDate] = useState<string | undefined>()
+  const [selectedSupplierFilter, setSelectedSupplierFilter] = useState('')
+  const [allPurchases, setAllPurchases] = useState<Purchase[]>([])
 
   useEffect(() => {
     fetchPurchases()
     fetchSuppliers()
   }, [])
+
+  useEffect(() => {
+    applyFilters()
+  }, [dateFilter, filterStartDate, filterEndDate, selectedSupplierFilter, allPurchases])
 
   const fetchSuppliers = async () => {
     try {
@@ -98,12 +108,48 @@ export default function Purchases() {
   const fetchPurchases = async () => {
     try {
       const res = await axios.get(`${API_URL}/ledger/purchases`)
-      setPurchases(res.data.purchases)
+      setAllPurchases(res.data.purchases)
+      applyFiltersToData(res.data.purchases)
     } catch (err) {
       console.error('Failed to fetch purchases', err)
     } finally {
       setLoading(false)
     }
+  }
+
+  const applyFiltersToData = (data: Purchase[]) => {
+    let filtered = [...data]
+
+    // Apply date filter
+    if (filterStartDate && filterEndDate) {
+      const start = new Date(filterStartDate)
+      const end = new Date(filterEndDate)
+      filtered = filtered.filter(purchase => {
+        const purchaseDate = new Date(purchase.date)
+        return purchaseDate >= start && purchaseDate <= end
+      })
+    }
+
+    // Apply supplier filter
+    if (selectedSupplierFilter) {
+      filtered = filtered.filter(purchase => purchase.supplierName === selectedSupplierFilter)
+    }
+
+    setPurchases(filtered)
+  }
+
+  const applyFilters = () => {
+    applyFiltersToData(allPurchases)
+  }
+
+  const handleFilterChange = (filter: DateFilterType, startDate?: string, endDate?: string) => {
+    setDateFilter(filter)
+    setFilterStartDate(startDate)
+    setFilterEndDate(endDate)
+  }
+
+  const handleSupplierFilterChange = (supplier: string) => {
+    setSelectedSupplierFilter(supplier)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -184,6 +230,12 @@ export default function Purchases() {
 
   const totalAmount = (p: Purchase) => p.totalAmount || 0
 
+  const calculateBalance = (purchase: Purchase) => {
+    const total = totalAmount(purchase)
+    const paid = purchase.paidAmount || 0
+    return total - paid
+  }
+
   const handleUpdateClick = (purchase: Purchase) => {
     setEditingPurchase(purchase)
     setUpdateData({
@@ -250,6 +302,14 @@ export default function Purchases() {
           <span>Add Purchase</span>
         </button>
       </div>
+
+      <DateFilter
+        onFilterChange={handleFilterChange}
+        showSupplierFilter={true}
+        suppliers={suppliers}
+        selectedSupplier={selectedSupplierFilter}
+        onSupplierChange={handleSupplierFilterChange}
+      />
 
       {showForm && (
         <div className="card">
@@ -490,6 +550,12 @@ export default function Purchases() {
                     Total
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Paid
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Balance
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Status
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -523,6 +589,27 @@ export default function Purchases() {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
                       })}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      Rs {(purchase.paidAmount || 0).toLocaleString('en-IN', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      {(() => {
+                        const balance = calculateBalance(purchase)
+                        const isPaid = balance <= 0
+                        return (
+                          <span className={`text-sm font-medium ${isPaid ? 'text-green-600' : 'text-red-600'}`}>
+                            Rs {balance.toLocaleString('en-IN', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                            {isPaid ? ' (Paid)' : ' (Unpaid)'}
+                          </span>
+                        )
+                      })()}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       <div className="flex items-center space-x-2">

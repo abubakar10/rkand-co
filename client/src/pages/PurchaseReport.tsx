@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { FileText, DollarSign, ShoppingCart, TrendingUp, Image as ImageIcon } from 'lucide-react'
+import DateFilter, { DateFilterType } from '../components/DateFilter'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 
@@ -28,10 +29,20 @@ export default function PurchaseReport() {
   const [selectedSupplier, setSelectedSupplier] = useState<SupplierSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [dateFilter, setDateFilter] = useState<DateFilterType>('all')
+  const [filterStartDate, setFilterStartDate] = useState<string | undefined>()
+  const [filterEndDate, setFilterEndDate] = useState<string | undefined>()
+  const [selectedSupplierFilter, setSelectedSupplierFilter] = useState('')
+  const [allSuppliers, setAllSuppliers] = useState<SupplierSummary[]>([])
+  const [supplierNames, setSupplierNames] = useState<string[]>([])
 
   useEffect(() => {
     fetchSuppliers()
   }, [])
+
+  useEffect(() => {
+    applyFilters()
+  }, [dateFilter, filterStartDate, filterEndDate, selectedSupplierFilter, allSuppliers])
 
   const fetchSuppliers = async () => {
     try {
@@ -42,12 +53,65 @@ export default function PurchaseReport() {
         }
       } : {}
       const res = await axios.get(`${API_URL}/ledger/suppliers`, config)
-      setSuppliers(res.data.suppliers)
+      setAllSuppliers(res.data.suppliers)
+      setSupplierNames(res.data.suppliers.map((s: SupplierSummary) => s.supplierName))
+      applyFiltersToData(res.data.suppliers)
     } catch (err) {
       console.error('Failed to fetch suppliers', err)
     } finally {
       setLoading(false)
     }
+  }
+
+  const applyFiltersToData = (data: SupplierSummary[]) => {
+    let filtered = [...data]
+
+    // Apply supplier filter
+    if (selectedSupplierFilter) {
+      filtered = filtered.filter(supplier => supplier.supplierName === selectedSupplierFilter)
+    }
+
+    // Apply date filter to orders within each supplier
+    if (filterStartDate && filterEndDate) {
+      const start = new Date(filterStartDate)
+      const end = new Date(filterEndDate)
+      filtered = filtered.map(supplier => {
+        const filteredOrders = supplier.orders.filter(order => {
+          const orderDate = new Date(order.date)
+          return orderDate >= start && orderDate <= end
+        })
+        
+        // Recalculate totals based on filtered orders
+        const totalAmount = filteredOrders.reduce((sum, order) => sum + (order.totalAmount || 0), 0)
+        const totalPaid = filteredOrders.reduce((sum, order) => sum + (order.paidAmount || 0), 0)
+        const balance = totalAmount - totalPaid
+
+        return {
+          ...supplier,
+          orders: filteredOrders,
+          totalOrders: filteredOrders.length,
+          totalAmount,
+          totalPaid,
+          balance
+        }
+      }).filter(supplier => supplier.orders.length > 0) // Remove suppliers with no orders in date range
+    }
+
+    setSuppliers(filtered)
+  }
+
+  const applyFilters = () => {
+    applyFiltersToData(allSuppliers)
+  }
+
+  const handleFilterChange = (filter: DateFilterType, startDate?: string, endDate?: string) => {
+    setDateFilter(filter)
+    setFilterStartDate(startDate)
+    setFilterEndDate(endDate)
+  }
+
+  const handleSupplierFilterChange = (supplier: string) => {
+    setSelectedSupplierFilter(supplier)
   }
 
   const fetchSupplierDetails = async (supplierName: string) => {
@@ -103,6 +167,14 @@ export default function PurchaseReport() {
           <p className="text-gray-600 mt-1">View detailed supplier transaction history</p>
         </div>
       </div>
+
+      <DateFilter
+        onFilterChange={handleFilterChange}
+        showSupplierFilter={true}
+        suppliers={supplierNames}
+        selectedSupplier={selectedSupplierFilter}
+        onSupplierChange={handleSupplierFilterChange}
+      />
 
       <div className="card">
         <div className="mb-4">

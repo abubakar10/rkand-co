@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { FileText, DollarSign, ShoppingCart, TrendingUp, Image as ImageIcon } from 'lucide-react'
+import DateFilter, { DateFilterType } from '../components/DateFilter'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 
@@ -28,10 +29,20 @@ export default function CustomerReport() {
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [dateFilter, setDateFilter] = useState<DateFilterType>('all')
+  const [filterStartDate, setFilterStartDate] = useState<string | undefined>()
+  const [filterEndDate, setFilterEndDate] = useState<string | undefined>()
+  const [selectedCustomerFilter, setSelectedCustomerFilter] = useState('')
+  const [allCustomers, setAllCustomers] = useState<CustomerSummary[]>([])
+  const [customerNames, setCustomerNames] = useState<string[]>([])
 
   useEffect(() => {
     fetchCustomers()
   }, [])
+
+  useEffect(() => {
+    applyFilters()
+  }, [dateFilter, filterStartDate, filterEndDate, selectedCustomerFilter, allCustomers])
 
   const fetchCustomers = async () => {
     try {
@@ -42,12 +53,65 @@ export default function CustomerReport() {
         }
       } : {}
       const res = await axios.get(`${API_URL}/ledger/customers`, config)
-      setCustomers(res.data.customers)
+      setAllCustomers(res.data.customers)
+      setCustomerNames(res.data.customers.map((c: CustomerSummary) => c.customerName))
+      applyFiltersToData(res.data.customers)
     } catch (err) {
       console.error('Failed to fetch customers', err)
     } finally {
       setLoading(false)
     }
+  }
+
+  const applyFiltersToData = (data: CustomerSummary[]) => {
+    let filtered = [...data]
+
+    // Apply customer filter
+    if (selectedCustomerFilter) {
+      filtered = filtered.filter(customer => customer.customerName === selectedCustomerFilter)
+    }
+
+    // Apply date filter to orders within each customer
+    if (filterStartDate && filterEndDate) {
+      const start = new Date(filterStartDate)
+      const end = new Date(filterEndDate)
+      filtered = filtered.map(customer => {
+        const filteredOrders = customer.orders.filter(order => {
+          const orderDate = new Date(order.date)
+          return orderDate >= start && orderDate <= end
+        })
+        
+        // Recalculate totals based on filtered orders
+        const totalAmount = filteredOrders.reduce((sum, order) => sum + (order.totalAmount || 0), 0)
+        const totalPaid = filteredOrders.reduce((sum, order) => sum + (order.paidAmount || 0), 0)
+        const balance = totalAmount - totalPaid
+
+        return {
+          ...customer,
+          orders: filteredOrders,
+          totalOrders: filteredOrders.length,
+          totalAmount,
+          totalPaid,
+          balance
+        }
+      }).filter(customer => customer.orders.length > 0) // Remove customers with no orders in date range
+    }
+
+    setCustomers(filtered)
+  }
+
+  const applyFilters = () => {
+    applyFiltersToData(allCustomers)
+  }
+
+  const handleFilterChange = (filter: DateFilterType, startDate?: string, endDate?: string) => {
+    setDateFilter(filter)
+    setFilterStartDate(startDate)
+    setFilterEndDate(endDate)
+  }
+
+  const handleCustomerFilterChange = (customer: string) => {
+    setSelectedCustomerFilter(customer)
   }
 
   const fetchCustomerDetails = async (customerName: string) => {
@@ -103,6 +167,14 @@ export default function CustomerReport() {
           <p className="text-gray-600 mt-1">View detailed customer transaction history</p>
         </div>
       </div>
+
+      <DateFilter
+        onFilterChange={handleFilterChange}
+        showCustomerFilter={true}
+        customers={customerNames}
+        selectedCustomer={selectedCustomerFilter}
+        onCustomerChange={handleCustomerFilterChange}
+      />
 
       <div className="card">
         <div className="mb-4">
