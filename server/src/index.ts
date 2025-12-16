@@ -17,7 +17,7 @@ const app = express();
 
 // CORS configuration - normalize origin to handle trailing slash issues
 const corsOptions = {
-  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean | string) => void) => {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     
@@ -26,7 +26,8 @@ const corsOptions = {
     const normalizedClientUrl = env.clientUrl.replace(/\/+$/, '');
     
     if (normalizedOrigin === normalizedClientUrl) {
-      callback(null, true);
+      // Return the normalized client URL to ensure consistent header value
+      callback(null, normalizedClientUrl);
     } else {
       callback(new Error('Not allowed by CORS'));
     }
