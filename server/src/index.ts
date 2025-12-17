@@ -17,6 +17,46 @@ const app = express();
 
 // CORS configuration - normalize origin to handle trailing slash issues
 const isDevelopment = process.env.NODE_ENV !== 'production';
+
+// Get allowed origins from environment variable (comma-separated) or use defaults
+const getAllowedOrigins = (): string[] => {
+  const origins: string[] = [];
+  
+  // Add configured client URL
+  const normalizedClientUrl = env.clientUrl.replace(/\/+$/, '');
+  if (normalizedClientUrl) {
+    origins.push(normalizedClientUrl);
+  }
+  
+  // Add any additional origins from environment variable
+  if (process.env.ALLOWED_ORIGINS) {
+    const additionalOrigins = process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim().replace(/\/+$/, ''));
+    origins.push(...additionalOrigins);
+  }
+  
+  // Add common production domains
+  origins.push(
+    'https://rkandco.netlify.app',
+    'https://www.rkandco.netlify.app',
+  );
+  
+  // In development, also allow localhost origins
+  if (isDevelopment) {
+    origins.push(
+      'http://localhost:5173',  // Vite default dev server
+      'http://localhost:3000',  // Common React dev server
+      'http://localhost:5174',  // Alternative Vite port
+      'http://127.0.0.1:5173',  // Alternative localhost format
+      'http://127.0.0.1:3000',
+    );
+  }
+  
+  // Remove duplicates
+  return [...new Set(origins)];
+};
+
+const allowedOrigins = getAllowedOrigins();
+
 const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean | string) => void) => {
     // Allow requests with no origin (like mobile apps or curl requests)
@@ -24,27 +64,13 @@ const corsOptions = {
     
     // Normalize origin by removing trailing slash
     const normalizedOrigin = origin.replace(/\/+$/, '');
-    const normalizedClientUrl = env.clientUrl.replace(/\/+$/, '');
-    
-    // Base list of allowed origins (always includes the configured client URL)
-    const allowedOrigins: string[] = [normalizedClientUrl];
-    
-    // In development, also allow localhost origins
-    if (isDevelopment) {
-      allowedOrigins.push(
-        'http://localhost:5173',  // Vite default dev server
-        'http://localhost:3000',  // Common React dev server
-        'http://localhost:5174',  // Alternative Vite port
-        'http://127.0.0.1:5173',  // Alternative localhost format
-        'http://127.0.0.1:3000',
-      );
-    }
     
     // Check if origin is in allowed list
     if (allowedOrigins.includes(normalizedOrigin)) {
       callback(null, normalizedOrigin);
     } else {
       console.warn(`CORS blocked origin: ${normalizedOrigin} (Environment: ${isDevelopment ? 'development' : 'production'})`);
+      console.warn(`Allowed origins: ${allowedOrigins.join(', ')}`);
       callback(new Error('Not allowed by CORS'));
     }
   },
