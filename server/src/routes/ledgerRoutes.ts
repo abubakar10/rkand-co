@@ -138,7 +138,17 @@ router.put(
       if (req.body.paidAmount !== undefined) {
         const paidAmount = parseFloat(req.body.paidAmount) || 0;
         // Cap paidAmount at totalAmount
-        updateData.paidAmount = Math.min(paidAmount, purchase.totalAmount);
+        const cappedPaidAmount = Math.min(paidAmount, purchase.totalAmount);
+        updateData.paidAmount = cappedPaidAmount;
+        
+        // Automatically update payment status based on paid amount
+        if (cappedPaidAmount >= purchase.totalAmount) {
+          updateData.paymentStatus = "paid";
+        } else if (cappedPaidAmount > 0) {
+          updateData.paymentStatus = "partial";
+        } else {
+          updateData.paymentStatus = "unpaid";
+        }
       }
 
       if (req.file) {
@@ -315,7 +325,17 @@ router.put(
       if (req.body.paidAmount !== undefined) {
         const paidAmount = parseFloat(req.body.paidAmount) || 0;
         // Cap paidAmount at totalAmount
-        updateData.paidAmount = Math.min(paidAmount, sale.totalAmount);
+        const cappedPaidAmount = Math.min(paidAmount, sale.totalAmount);
+        updateData.paidAmount = cappedPaidAmount;
+        
+        // Automatically update payment status based on paid amount
+        if (cappedPaidAmount >= sale.totalAmount) {
+          updateData.paymentStatus = "paid";
+        } else if (cappedPaidAmount > 0) {
+          updateData.paymentStatus = "partial";
+        } else {
+          updateData.paymentStatus = "unpaid";
+        }
       }
 
       if (req.file) {
@@ -408,6 +428,110 @@ router.get("/customers", async (_req: Request, res: Response) => {
   res.json({ customers });
 });
 
+// Customer payment allocation endpoint - MUST come before /customers/:customerName
+router.post(
+  "/customers/:customerName/payments",
+  [
+    body("amount").isFloat({ min: 0.01 }).withMessage("Amount must be a positive number"),
+    body("notes").optional().isString(),
+  ],
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+      const customerName = decodeURIComponent(req.params.customerName || "");
+      if (!customerName) {
+        return res.status(400).json({ message: "Customer name is required" });
+      }
+
+      const paymentAmount = parseFloat(req.body.amount);
+      if (paymentAmount <= 0) {
+        return res.status(400).json({ message: "Payment amount must be greater than 0" });
+      }
+
+      // Get all unpaid/partial orders for this customer, sorted by date (oldest first)
+      const orders = await CustomerSale.find({
+        customerName,
+        $or: [
+          { paymentStatus: "unpaid" },
+          { paymentStatus: "partial" }
+        ]
+      }).sort({ date: 1 }); // Oldest first
+
+      if (orders.length === 0) {
+        return res.status(400).json({ message: "No unpaid orders found for this customer" });
+      }
+
+      let remainingPayment = paymentAmount;
+      const allocationResults: Array<{
+        orderId: string;
+        allocated: number;
+        previousPaid: number;
+        newPaid: number;
+        status: string;
+      }> = [];
+
+      // Allocate payment across orders
+      for (const order of orders) {
+        if (remainingPayment <= 0) break;
+
+        const totalAmount = order.totalAmount || 0;
+        const currentPaid = Math.min(order.paidAmount || 0, totalAmount);
+        const balance = totalAmount - currentPaid;
+
+        if (balance > 0) {
+          const allocation = Math.min(remainingPayment, balance);
+          const newPaid = currentPaid + allocation;
+          const newStatus = newPaid >= totalAmount ? "paid" : "partial";
+
+          await CustomerSale.findByIdAndUpdate(order._id, {
+            paidAmount: newPaid,
+            paymentStatus: newStatus,
+          });
+
+          allocationResults.push({
+            orderId: order._id.toString(),
+            allocated: allocation,
+            previousPaid: currentPaid,
+            newPaid: newPaid,
+            status: newStatus,
+          });
+
+          remainingPayment -= allocation;
+        }
+      }
+
+      const allocatedAmount = paymentAmount - remainingPayment;
+      
+      if (remainingPayment > 0) {
+        res.json({
+          message: `Payment partially allocated. ${allocatedAmount.toFixed(2)} allocated, ${remainingPayment.toFixed(2)} remaining (exceeds total unpaid balance)`,
+          totalPayment: paymentAmount,
+          allocatedAmount: allocatedAmount,
+          remainingAmount: remainingPayment,
+          allocatedOrders: allocationResults.length,
+          allocationResults,
+          warning: true,
+        });
+      } else {
+        res.json({
+          message: "Payment allocated successfully",
+          totalPayment: paymentAmount,
+          allocatedAmount: paymentAmount,
+          allocatedOrders: allocationResults.length,
+          allocationResults,
+        });
+      }
+    } catch (err: any) {
+      console.error("Error allocating customer payment:", err);
+      res.status(500).json({ message: err.message || "Failed to allocate payment" });
+    }
+  }
+);
+
 router.get("/customers/:customerName", async (req: Request, res: Response) => {
   const customerName = decodeURIComponent(req.params.customerName || "");
   if (!customerName) {
@@ -497,6 +621,110 @@ router.get("/suppliers", async (_req: Request, res: Response) => {
   const suppliers = Array.from(supplierMap.values());
   res.json({ suppliers });
 });
+
+// Supplier payment allocation endpoint - MUST come before /suppliers/:supplierName
+router.post(
+  "/suppliers/:supplierName/payments",
+  [
+    body("amount").isFloat({ min: 0.01 }).withMessage("Amount must be a positive number"),
+    body("notes").optional().isString(),
+  ],
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+      const supplierName = decodeURIComponent(req.params.supplierName || "");
+      if (!supplierName) {
+        return res.status(400).json({ message: "Supplier name is required" });
+      }
+
+      const paymentAmount = parseFloat(req.body.amount);
+      if (paymentAmount <= 0) {
+        return res.status(400).json({ message: "Payment amount must be greater than 0" });
+      }
+
+      // Get all unpaid/partial orders for this supplier, sorted by date (oldest first)
+      const orders = await SupplierPurchase.find({
+        supplierName,
+        $or: [
+          { paymentStatus: "unpaid" },
+          { paymentStatus: "partial" }
+        ]
+      }).sort({ date: 1 }); // Oldest first
+
+      if (orders.length === 0) {
+        return res.status(400).json({ message: "No unpaid orders found for this supplier" });
+      }
+
+      let remainingPayment = paymentAmount;
+      const allocationResults: Array<{
+        orderId: string;
+        allocated: number;
+        previousPaid: number;
+        newPaid: number;
+        status: string;
+      }> = [];
+
+      // Allocate payment across orders
+      for (const order of orders) {
+        if (remainingPayment <= 0) break;
+
+        const totalAmount = order.totalAmount || 0;
+        const currentPaid = Math.min(order.paidAmount || 0, totalAmount);
+        const balance = totalAmount - currentPaid;
+
+        if (balance > 0) {
+          const allocation = Math.min(remainingPayment, balance);
+          const newPaid = currentPaid + allocation;
+          const newStatus = newPaid >= totalAmount ? "paid" : "partial";
+
+          await SupplierPurchase.findByIdAndUpdate(order._id, {
+            paidAmount: newPaid,
+            paymentStatus: newStatus,
+          });
+
+          allocationResults.push({
+            orderId: order._id.toString(),
+            allocated: allocation,
+            previousPaid: currentPaid,
+            newPaid: newPaid,
+            status: newStatus,
+          });
+
+          remainingPayment -= allocation;
+        }
+      }
+
+      const allocatedAmount = paymentAmount - remainingPayment;
+      
+      if (remainingPayment > 0) {
+        res.json({
+          message: `Payment partially allocated. ${allocatedAmount.toFixed(2)} allocated, ${remainingPayment.toFixed(2)} remaining (exceeds total unpaid balance)`,
+          totalPayment: paymentAmount,
+          allocatedAmount: allocatedAmount,
+          remainingAmount: remainingPayment,
+          allocatedOrders: allocationResults.length,
+          allocationResults,
+          warning: true,
+        });
+      } else {
+        res.json({
+          message: "Payment allocated successfully",
+          totalPayment: paymentAmount,
+          allocatedAmount: paymentAmount,
+          allocatedOrders: allocationResults.length,
+          allocationResults,
+        });
+      }
+    } catch (err: any) {
+      console.error("Error allocating supplier payment:", err);
+      res.status(500).json({ message: err.message || "Failed to allocate payment" });
+    }
+  }
+);
 
 router.get("/suppliers/:supplierName", async (req: Request, res: Response) => {
   const supplierName = decodeURIComponent(req.params.supplierName || "");

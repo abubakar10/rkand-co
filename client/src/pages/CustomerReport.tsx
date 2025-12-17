@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { FileText, DollarSign, ShoppingCart, TrendingUp, Image as ImageIcon } from 'lucide-react'
+import { FileText, DollarSign, ShoppingCart, TrendingUp, Image as ImageIcon, CreditCard, X } from 'lucide-react'
 import DateFilter, { DateFilterType } from '../components/DateFilter'
 import { API_URL } from '../config/api'
 
@@ -34,6 +34,13 @@ export default function CustomerReport() {
   const [selectedCustomerFilter, setSelectedCustomerFilter] = useState('')
   const [allCustomers, setAllCustomers] = useState<CustomerSummary[]>([])
   const [customerNames, setCustomerNames] = useState<string[]>([])
+  const [showPaymentForm, setShowPaymentForm] = useState(false)
+  const [paymentCustomer, setPaymentCustomer] = useState<string>('')
+  const [paymentAmount, setPaymentAmount] = useState('')
+  const [paymentNotes, setPaymentNotes] = useState('')
+  const [processingPayment, setProcessingPayment] = useState(false)
+  const [paymentError, setPaymentError] = useState('')
+  const [paymentSuccess, setPaymentSuccess] = useState('')
 
   useEffect(() => {
     fetchCustomers()
@@ -158,6 +165,65 @@ export default function CustomerReport() {
     )
   }
 
+  const handlePaymentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!paymentCustomer || !paymentAmount || parseFloat(paymentAmount) <= 0) {
+      setPaymentError('Please enter a valid customer and payment amount')
+      return
+    }
+
+    setProcessingPayment(true)
+    setPaymentError('')
+    setPaymentSuccess('')
+
+    try {
+      const token = localStorage.getItem('token')
+      const config = token ? {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      } : {}
+
+      const response = await axios.post(
+        `${API_URL}/ledger/customers/${encodeURIComponent(paymentCustomer)}/payments`,
+        {
+          amount: parseFloat(paymentAmount),
+          notes: paymentNotes,
+        },
+        config
+      )
+
+      if (response.data.warning) {
+        setPaymentError(`Warning: ${response.data.message}`)
+      } else {
+        setPaymentSuccess(`Payment of Rs ${paymentAmount} allocated successfully across ${response.data.allocatedOrders} order(s)`)
+        setPaymentAmount('')
+        setPaymentNotes('')
+        setShowPaymentForm(false)
+      }
+      
+      // Refresh customer data
+      await fetchCustomers()
+      if (selectedCustomer?.customerName === paymentCustomer) {
+        await fetchCustomerDetails(paymentCustomer)
+      }
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.message || err.response?.data?.errors?.[0]?.msg || 'Failed to process payment'
+      setPaymentError(errorMessage)
+    } finally {
+      setProcessingPayment(false)
+    }
+  }
+
+  const openPaymentForm = (customerName: string) => {
+    setPaymentCustomer(customerName)
+    setPaymentAmount('')
+    setPaymentNotes('')
+    setPaymentError('')
+    setPaymentSuccess('')
+    setShowPaymentForm(true)
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -165,6 +231,20 @@ export default function CustomerReport() {
           <h1 className="text-3xl font-bold text-gray-900">Customer Reports</h1>
           <p className="text-gray-600 mt-1">View detailed customer transaction history</p>
         </div>
+        <button
+          onClick={() => {
+            setPaymentCustomer('')
+            setPaymentAmount('')
+            setPaymentNotes('')
+            setPaymentError('')
+            setPaymentSuccess('')
+            setShowPaymentForm(true)
+          }}
+          className="btn btn-primary flex items-center space-x-2"
+        >
+          <CreditCard className="w-5 h-5" />
+          <span>Record Payment</span>
+        </button>
       </div>
 
       <DateFilter
@@ -240,18 +320,30 @@ export default function CustomerReport() {
                       {formatCurrency(customer.balance)}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm">
-                      <button
-                        onClick={() => {
-                          if (selectedCustomer?.customerName === customer.customerName) {
-                            setSelectedCustomer(null)
-                          } else {
-                            fetchCustomerDetails(customer.customerName)
-                          }
-                        }}
-                        className="text-primary-600 hover:text-primary-800 transition-colors"
-                      >
-                        {selectedCustomer?.customerName === customer.customerName ? 'Hide' : 'View'} Details
-                      </button>
+                      <div className="flex items-center space-x-3">
+                        <button
+                          onClick={() => {
+                            if (selectedCustomer?.customerName === customer.customerName) {
+                              setSelectedCustomer(null)
+                            } else {
+                              fetchCustomerDetails(customer.customerName)
+                            }
+                          }}
+                          className="text-primary-600 hover:text-primary-800 transition-colors"
+                        >
+                          {selectedCustomer?.customerName === customer.customerName ? 'Hide' : 'View'} Details
+                        </button>
+                        {customer.balance > 0 && (
+                          <button
+                            onClick={() => openPaymentForm(customer.customerName)}
+                            className="text-green-600 hover:text-green-800 transition-colors flex items-center space-x-1"
+                            title="Record payment"
+                          >
+                            <CreditCard className="w-4 h-4" />
+                            <span>Pay</span>
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -364,6 +456,137 @@ export default function CustomerReport() {
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Form Modal */}
+      {showPaymentForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-xl font-semibold text-gray-900">Record Customer Payment</h2>
+              <button
+                onClick={() => {
+                  setShowPaymentForm(false)
+                  setPaymentError('')
+                  setPaymentSuccess('')
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handlePaymentSubmit} className="p-4 space-y-4">
+              {paymentError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                  {paymentError}
+                </div>
+              )}
+              {paymentSuccess && (
+                <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm">
+                  {paymentSuccess}
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Customer Name
+                </label>
+                {paymentCustomer ? (
+                  <input
+                    type="text"
+                    value={paymentCustomer}
+                    disabled
+                    className="input bg-gray-100"
+                  />
+                ) : (
+                  <select
+                    value={paymentCustomer}
+                    onChange={(e) => setPaymentCustomer(e.target.value)}
+                    className="input"
+                    required
+                  >
+                    <option value="">Select Customer</option>
+                    {customerNames.map((name) => {
+                      const customer = allCustomers.find(c => c.customerName === name)
+                      if (customer && customer.balance > 0) {
+                        return (
+                          <option key={name} value={name}>
+                            {name} (Balance: Rs {customer.balance.toLocaleString('en-IN', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })})
+                          </option>
+                        )
+                      }
+                      return null
+                    })}
+                  </select>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Payment Amount (Rs)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  className="input"
+                  placeholder="0.00"
+                  required
+                />
+                {paymentCustomer && (() => {
+                  const customer = allCustomers.find(c => c.customerName === paymentCustomer)
+                  if (customer && customer.balance > 0) {
+                    return (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Outstanding Balance: Rs {customer.balance.toLocaleString('en-IN', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </p>
+                    )
+                  }
+                  return null
+                })()}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Notes (Optional)
+                </label>
+                <textarea
+                  value={paymentNotes}
+                  onChange={(e) => setPaymentNotes(e.target.value)}
+                  className="input"
+                  rows={3}
+                  placeholder="Additional notes about this payment"
+                />
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-800">
+                  <strong>Note:</strong> The payment will be automatically allocated across all unpaid orders for this customer, starting with the oldest order first.
+                </p>
+              </div>
+              <div className="flex space-x-3 pt-4">
+                <button type="submit" disabled={processingPayment} className="btn btn-primary flex-1">
+                  {processingPayment ? 'Processing...' : 'Record Payment'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPaymentForm(false)
+                    setPaymentError('')
+                    setPaymentSuccess('')
+                  }}
+                  className="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
