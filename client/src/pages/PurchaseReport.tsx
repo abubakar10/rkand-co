@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { FileText, DollarSign, ShoppingCart, TrendingUp, Image as ImageIcon, CreditCard, X } from 'lucide-react'
+import { FileText, DollarSign, ShoppingCart, TrendingUp, Image as ImageIcon, CreditCard, X, Download } from 'lucide-react'
 import DateFilter, { DateFilterType } from '../components/DateFilter'
 import { API_URL } from '../config/api'
 
@@ -224,6 +224,36 @@ export default function PurchaseReport() {
     setShowPaymentForm(true)
   }
 
+  const handleDownloadPDF = async (supplierName: string) => {
+    try {
+      const token = localStorage.getItem('token')
+      const config = token ? {
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        responseType: 'blob' as const
+      } : { responseType: 'blob' as const }
+
+      const response = await axios.get(
+        `${API_URL}/ledger/suppliers/${encodeURIComponent(supplierName)}/pdf`,
+        config
+      )
+
+      // Create blob and download
+      const url = window.URL.createObjectURL(new Blob([response.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `${supplierName.replace(/[^a-z0-9]/gi, '_')}_Report_${new Date().toISOString().split('T')[0]}.pdf`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err: any) {
+      console.error('Failed to download PDF:', err)
+      alert('Failed to download PDF. Please try again.')
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -333,6 +363,14 @@ export default function PurchaseReport() {
                         >
                           {selectedSupplier?.supplierName === supplier.supplierName ? 'Hide' : 'View'} Details
                         </button>
+                        <button
+                          onClick={() => handleDownloadPDF(supplier.supplierName)}
+                          className="text-blue-600 hover:text-blue-800 transition-colors flex items-center space-x-1"
+                          title="Download PDF report"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>PDF</span>
+                        </button>
                         {supplier.balance > 0 && (
                           <button
                             onClick={() => openPaymentForm(supplier.supplierName)}
@@ -356,9 +394,18 @@ export default function PurchaseReport() {
       {selectedSupplier && (
         <div className="card">
           <div className="mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              {selectedSupplier.supplierName} - Detailed Report
-            </h2>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-2xl font-bold text-gray-900">
+                {selectedSupplier.supplierName} - Detailed Report
+              </h2>
+              <button
+                onClick={() => handleDownloadPDF(selectedSupplier.supplierName)}
+                className="btn btn-primary flex items-center space-x-2"
+              >
+                <Download className="w-5 h-5" />
+                <span>Download PDF</span>
+              </button>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
               <div className="bg-blue-50 p-4 rounded-lg">
                 <div className="flex items-center space-x-2 mb-2">

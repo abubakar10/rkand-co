@@ -6,6 +6,7 @@ import { CustomerSale } from "../models/CustomerSale";
 import { Customer } from "../models/Customer";
 import { Supplier } from "../models/Supplier";
 import { upload } from "../middleware/upload";
+import { generateCustomerPDF, generateSupplierPDF } from "../utils/pdfGenerator";
 
 const router = Router();
 
@@ -532,6 +533,82 @@ router.post(
   }
 );
 
+// Customer PDF download endpoint - MUST come before /customers/:customerName
+router.get("/customers/:customerName/pdf", async (req: Request, res: Response) => {
+  try {
+    const customerName = decodeURIComponent(req.params.customerName || "");
+    if (!customerName) {
+      return res.status(400).json({ message: "Customer name is required" });
+    }
+
+    const sales = await CustomerSale.find({ customerName }).sort({ date: 1 }); // Oldest first for PDF
+    
+    if (sales.length === 0) {
+      return res.status(404).json({ message: "No orders found for this customer" });
+    }
+
+    const totalOrders = sales.length;
+    const totalAmount = sales.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
+    const totalPaid = sales.reduce((sum, s) => {
+      const saleTotal = s.totalAmount || 0;
+      const salePaid = Math.min(s.paidAmount || 0, saleTotal);
+      return sum + salePaid;
+    }, 0);
+    const balance = totalAmount - totalPaid;
+
+    // Map orders for PDF
+    const orders = sales.map(sale => {
+      const saleTotal = sale.totalAmount || 0;
+      const salePaid = Math.min(sale.paidAmount || 0, saleTotal);
+      const orderItem: {
+        date: Date;
+        product: string;
+        liters?: number;
+        ratePerLitre?: number;
+        totalAmount: number;
+        paidAmount: number;
+        balance: number;
+        paymentStatus: string;
+      } = {
+        date: sale.date,
+        product: sale.product,
+        totalAmount: saleTotal,
+        paidAmount: salePaid,
+        balance: saleTotal - salePaid,
+        paymentStatus: sale.paymentStatus,
+      };
+      if (sale.liters !== undefined) {
+        orderItem.liters = sale.liters;
+      }
+      if (sale.ratePerLitre !== undefined) {
+        orderItem.ratePerLitre = sale.ratePerLitre;
+      }
+      return orderItem;
+    });
+
+    const summary = {
+      totalOrders,
+      totalAmount,
+      totalPaid,
+      balance,
+    };
+
+    const pdfBuffer = await generateCustomerPDF(customerName, orders, summary);
+
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${customerName.replace(/[^a-z0-9]/gi, '_')}_Report_${new Date().toISOString().split('T')[0]}.pdf"`
+    );
+
+    res.send(pdfBuffer);
+  } catch (err: any) {
+    console.error("Error generating customer PDF:", err);
+    res.status(500).json({ message: err.message || "Failed to generate PDF" });
+  }
+});
+
 router.get("/customers/:customerName", async (req: Request, res: Response) => {
   const customerName = decodeURIComponent(req.params.customerName || "");
   if (!customerName) {
@@ -725,6 +802,82 @@ router.post(
     }
   }
 );
+
+// Supplier PDF download endpoint - MUST come before /suppliers/:supplierName
+router.get("/suppliers/:supplierName/pdf", async (req: Request, res: Response) => {
+  try {
+    const supplierName = decodeURIComponent(req.params.supplierName || "");
+    if (!supplierName) {
+      return res.status(400).json({ message: "Supplier name is required" });
+    }
+
+    const purchases = await SupplierPurchase.find({ supplierName }).sort({ date: 1 }); // Oldest first for PDF
+    
+    if (purchases.length === 0) {
+      return res.status(404).json({ message: "No orders found for this supplier" });
+    }
+
+    const totalOrders = purchases.length;
+    const totalAmount = purchases.reduce((sum, p) => sum + (p.totalAmount || 0), 0);
+    const totalPaid = purchases.reduce((sum, p) => {
+      const purchaseTotal = p.totalAmount || 0;
+      const purchasePaid = Math.min(p.paidAmount || 0, purchaseTotal);
+      return sum + purchasePaid;
+    }, 0);
+    const balance = totalAmount - totalPaid;
+
+    // Map orders for PDF
+    const orders = purchases.map(purchase => {
+      const purchaseTotal = purchase.totalAmount || 0;
+      const purchasePaid = Math.min(purchase.paidAmount || 0, purchaseTotal);
+      const orderItem: {
+        date: Date;
+        product: string;
+        liters?: number;
+        ratePerLitre?: number;
+        totalAmount: number;
+        paidAmount: number;
+        balance: number;
+        paymentStatus: string;
+      } = {
+        date: purchase.date,
+        product: purchase.product,
+        totalAmount: purchaseTotal,
+        paidAmount: purchasePaid,
+        balance: purchaseTotal - purchasePaid,
+        paymentStatus: purchase.paymentStatus,
+      };
+      if (purchase.liters !== undefined) {
+        orderItem.liters = purchase.liters;
+      }
+      if (purchase.ratePerLitre !== undefined) {
+        orderItem.ratePerLitre = purchase.ratePerLitre;
+      }
+      return orderItem;
+    });
+
+    const summary = {
+      totalOrders,
+      totalAmount,
+      totalPaid,
+      balance,
+    };
+
+    const pdfBuffer = await generateSupplierPDF(supplierName, orders, summary);
+
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${supplierName.replace(/[^a-z0-9]/gi, '_')}_Report_${new Date().toISOString().split('T')[0]}.pdf"`
+    );
+
+    res.send(pdfBuffer);
+  } catch (err: any) {
+    console.error("Error generating supplier PDF:", err);
+    res.status(500).json({ message: err.message || "Failed to generate PDF" });
+  }
+});
 
 router.get("/suppliers/:supplierName", async (req: Request, res: Response) => {
   const supplierName = decodeURIComponent(req.params.supplierName || "");
