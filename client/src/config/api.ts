@@ -9,17 +9,22 @@
 // VITE_API_URL=https://rkand-co.onrender.com/api
 
 const getApiUrl = () => {
+  // In development mode, use relative URL to leverage Vite proxy
+  // This avoids CORS issues completely
+  if (import.meta.env.DEV) {
+    // Use relative URL which will be proxied by Vite to localhost:5000
+    return '/api'
+  }
+  
+  // In production, use explicit URL
   let baseUrl = ''
   
   // If VITE_API_URL is explicitly set, use it
   if (import.meta.env.VITE_API_URL) {
     baseUrl = import.meta.env.VITE_API_URL
-  } else if (import.meta.env.PROD) {
-    // In production mode, use production backend URL
-    baseUrl = 'https://rkand-co.onrender.com'
   } else {
-    // Development fallback
-    baseUrl = 'http://localhost:5000'
+    // Production fallback
+    baseUrl = 'https://rkand-co.onrender.com'
   }
   
   // Ensure the URL ends with /api
@@ -38,4 +43,5 @@ export const API_URL = getApiUrl()
 
 // Log the API URL for debugging (both dev and prod)
 console.log('API URL:', API_URL)
+console.log('Environment:', import.meta.env.MODE, '| DEV:', import.meta.env.DEV, '| PROD:', import.meta.env.PROD)
 

@@ -16,6 +16,7 @@ import { errorHandler } from "./middleware/errorHandler";
 const app = express();
 
 // CORS configuration - normalize origin to handle trailing slash issues
+const isDevelopment = process.env.NODE_ENV !== 'production';
 const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean | string) => void) => {
     // Allow requests with no origin (like mobile apps or curl requests)
@@ -25,14 +26,31 @@ const corsOptions = {
     const normalizedOrigin = origin.replace(/\/+$/, '');
     const normalizedClientUrl = env.clientUrl.replace(/\/+$/, '');
     
-    if (normalizedOrigin === normalizedClientUrl) {
-      // Return the normalized client URL to ensure consistent header value
-      callback(null, normalizedClientUrl);
+    // Base list of allowed origins (always includes the configured client URL)
+    const allowedOrigins: string[] = [normalizedClientUrl];
+    
+    // In development, also allow localhost origins
+    if (isDevelopment) {
+      allowedOrigins.push(
+        'http://localhost:5173',  // Vite default dev server
+        'http://localhost:3000',  // Common React dev server
+        'http://localhost:5174',  // Alternative Vite port
+        'http://127.0.0.1:5173',  // Alternative localhost format
+        'http://127.0.0.1:3000',
+      );
+    }
+    
+    // Check if origin is in allowed list
+    if (allowedOrigins.includes(normalizedOrigin)) {
+      callback(null, normalizedOrigin);
     } else {
+      console.warn(`CORS blocked origin: ${normalizedOrigin} (Environment: ${isDevelopment ? 'development' : 'production'})`);
       callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 };
 
 app.use(cors(corsOptions));
