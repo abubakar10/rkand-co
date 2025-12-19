@@ -87,6 +87,15 @@ export default function Purchases() {
 
   const handleSupplierInputChange = (value: string) => {
     setFormData({ ...formData, supplierName: value })
+    // Add to suppliers list if it's a new name (so it shows in suggestions immediately)
+    if (value.trim() && !suppliers.includes(value.trim())) {
+      setSuppliers(prev => {
+        if (!prev.includes(value.trim())) {
+          return [...prev, value.trim()].sort()
+        }
+        return prev
+      })
+    }
     if (value.trim()) {
       const filtered = suppliers.filter(s => 
         s.toLowerCase().includes(value.toLowerCase())
@@ -185,6 +194,8 @@ export default function Purchases() {
         },
       })
       await fetchPurchases()
+      // Refresh supplier list to include newly added supplier
+      await fetchSuppliers()
       setShowForm(false)
       setFormData({
         supplierName: '',

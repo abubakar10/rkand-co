@@ -5,6 +5,7 @@ import { SupplierPurchase } from "../models/SupplierPurchase";
 import { CustomerSale } from "../models/CustomerSale";
 import { Customer } from "../models/Customer";
 import { Supplier } from "../models/Supplier";
+import { Payment } from "../models/Payment";
 import { upload } from "../middleware/upload";
 import { generateCustomerPDF, generateSupplierPDF } from "../utils/pdfGenerator";
 
@@ -412,6 +413,8 @@ router.get("/customers", async (_req: Request, res: Response) => {
     customer.orders.push({
       _id: sale._id,
       product: sale.product,
+      liters: sale.liters,
+      ratePerLitre: sale.ratePerLitre,
       totalAmount: totalAmount,
       paidAmount: paidAmount,
       paymentStatus: sale.paymentStatus,
@@ -507,6 +510,16 @@ router.post(
 
       const allocatedAmount = paymentAmount - remainingPayment;
       
+      // Save payment record
+      const paymentRecord = await Payment.create({
+        type: "customer",
+        customerName: customerName,
+        amount: paymentAmount,
+        notes: req.body.notes,
+        date: new Date(),
+        allocatedOrders: allocationResults,
+      });
+      
       if (remainingPayment > 0) {
         res.json({
           message: `Payment partially allocated. ${allocatedAmount.toFixed(2)} allocated, ${remainingPayment.toFixed(2)} remaining (exceeds total unpaid balance)`,
@@ -516,6 +529,7 @@ router.post(
           allocatedOrders: allocationResults.length,
           allocationResults,
           warning: true,
+          paymentId: paymentRecord._id,
         });
       } else {
         res.json({
@@ -524,6 +538,7 @@ router.post(
           allocatedAmount: paymentAmount,
           allocatedOrders: allocationResults.length,
           allocationResults,
+          paymentId: paymentRecord._id,
         });
       }
     } catch (err: any) {
@@ -615,6 +630,10 @@ router.get("/customers/:customerName", async (req: Request, res: Response) => {
     return res.status(400).json({ message: "Customer name is required" });
   }
   const sales = await CustomerSale.find({ customerName }).sort({ date: -1 });
+  const payments = await Payment.find({ 
+    type: "customer", 
+    customerName 
+  }).sort({ date: -1 });
   
   const totalOrders = sales.length;
   // Cap paidAmount at totalAmount for each sale to prevent data inconsistencies
@@ -630,11 +649,22 @@ router.get("/customers/:customerName", async (req: Request, res: Response) => {
   const orders = sales.map(sale => ({
     _id: sale._id,
     product: sale.product,
+    liters: sale.liters,
+    ratePerLitre: sale.ratePerLitre,
     totalAmount: sale.totalAmount || 0,
     paidAmount: Math.min(sale.paidAmount || 0, sale.totalAmount || 0),
     paymentStatus: sale.paymentStatus,
     date: sale.date,
     imageUrl: sale.imageUrl,
+  }));
+
+  // Map payment records
+  const paymentRecords = payments.map(payment => ({
+    _id: payment._id,
+    amount: payment.amount,
+    notes: payment.notes,
+    date: payment.date,
+    allocatedOrders: payment.allocatedOrders,
   }));
 
   res.json({
@@ -644,6 +674,7 @@ router.get("/customers/:customerName", async (req: Request, res: Response) => {
     totalPaid,
     balance,
     orders,
+    payments: paymentRecords,
   });
 });
 
@@ -682,6 +713,8 @@ router.get("/suppliers", async (_req: Request, res: Response) => {
     supplier.orders.push({
       _id: purchase._id,
       product: purchase.product,
+      liters: purchase.liters,
+      ratePerLitre: purchase.ratePerLitre,
       totalAmount: totalAmount,
       paidAmount: paidAmount,
       paymentStatus: purchase.paymentStatus,
@@ -777,6 +810,16 @@ router.post(
 
       const allocatedAmount = paymentAmount - remainingPayment;
       
+      // Save payment record
+      const paymentRecord = await Payment.create({
+        type: "supplier",
+        supplierName: supplierName,
+        amount: paymentAmount,
+        notes: req.body.notes,
+        date: new Date(),
+        allocatedOrders: allocationResults,
+      });
+      
       if (remainingPayment > 0) {
         res.json({
           message: `Payment partially allocated. ${allocatedAmount.toFixed(2)} allocated, ${remainingPayment.toFixed(2)} remaining (exceeds total unpaid balance)`,
@@ -786,6 +829,7 @@ router.post(
           allocatedOrders: allocationResults.length,
           allocationResults,
           warning: true,
+          paymentId: paymentRecord._id,
         });
       } else {
         res.json({
@@ -794,6 +838,7 @@ router.post(
           allocatedAmount: paymentAmount,
           allocatedOrders: allocationResults.length,
           allocationResults,
+          paymentId: paymentRecord._id,
         });
       }
     } catch (err: any) {
@@ -885,6 +930,10 @@ router.get("/suppliers/:supplierName", async (req: Request, res: Response) => {
     return res.status(400).json({ message: "Supplier name is required" });
   }
   const purchases = await SupplierPurchase.find({ supplierName }).sort({ date: -1 });
+  const payments = await Payment.find({ 
+    type: "supplier", 
+    supplierName 
+  }).sort({ date: -1 });
   
   const totalOrders = purchases.length;
   // Cap paidAmount at totalAmount for each purchase to prevent data inconsistencies
@@ -900,11 +949,22 @@ router.get("/suppliers/:supplierName", async (req: Request, res: Response) => {
   const orders = purchases.map(purchase => ({
     _id: purchase._id,
     product: purchase.product,
+    liters: purchase.liters,
+    ratePerLitre: purchase.ratePerLitre,
     totalAmount: purchase.totalAmount || 0,
     paidAmount: Math.min(purchase.paidAmount || 0, purchase.totalAmount || 0),
     paymentStatus: purchase.paymentStatus,
     date: purchase.date,
     depositSlipUrl: purchase.depositSlipUrl,
+  }));
+
+  // Map payment records
+  const paymentRecords = payments.map(payment => ({
+    _id: payment._id,
+    amount: payment.amount,
+    notes: payment.notes,
+    date: payment.date,
+    allocatedOrders: payment.allocatedOrders,
   }));
 
   res.json({
@@ -914,6 +974,7 @@ router.get("/suppliers/:supplierName", async (req: Request, res: Response) => {
     totalPaid,
     balance,
     orders,
+    payments: paymentRecords,
   });
 });
 

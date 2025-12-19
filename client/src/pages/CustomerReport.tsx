@@ -4,6 +4,20 @@ import { FileText, DollarSign, ShoppingCart, TrendingUp, Image as ImageIcon, Cre
 import DateFilter, { DateFilterType } from '../components/DateFilter'
 import { API_URL } from '../config/api'
 
+interface Payment {
+  _id: string
+  amount: number
+  notes?: string
+  date: string
+  allocatedOrders: Array<{
+    orderId: string
+    allocated: number
+    previousPaid: number
+    newPaid: number
+    status: string
+  }>
+}
+
 interface CustomerSummary {
   customerName: string
   totalOrders: number
@@ -11,11 +25,14 @@ interface CustomerSummary {
   totalPaid: number
   balance: number
   orders: Order[]
+  payments?: Payment[]
 }
 
 interface Order {
   _id: string
   product: string
+  liters?: number
+  ratePerLitre?: number
   totalAmount: number
   paidAmount: number
   paymentStatus: 'paid' | 'unpaid' | 'partial'
@@ -131,7 +148,11 @@ export default function CustomerReport() {
       const res = await axios.get(`${API_URL}/ledger/customers/${encodeURIComponent(customerName)}`, config)
       const customer = customers.find(c => c.customerName === customerName)
       if (customer) {
-        setSelectedCustomer({ ...customer, orders: res.data.orders })
+        setSelectedCustomer({ 
+          ...customer, 
+          orders: res.data.orders,
+          payments: res.data.payments || []
+        })
       }
     } catch (err) {
       console.error('Failed to fetch customer details', err)
@@ -440,6 +461,51 @@ export default function CustomerReport() {
             </div>
           </div>
 
+          {/* Product Summary */}
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Product Summary</h3>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {(() => {
+                  const productSummary = selectedCustomer.orders.reduce((acc, order) => {
+                    if (order.liters && order.product !== 'other') {
+                      if (!acc[order.product]) {
+                        acc[order.product] = { totalLiters: 0, orders: 0 }
+                      }
+                      acc[order.product].totalLiters += order.liters
+                      acc[order.product].orders += 1
+                    }
+                    return acc
+                  }, {} as Record<string, { totalLiters: number; orders: number }>)
+
+                  const products = Object.entries(productSummary)
+                  
+                  if (products.length === 0) {
+                    return (
+                      <div className="col-span-full text-center text-gray-500 py-4">
+                        No product quantity data available
+                      </div>
+                    )
+                  }
+
+                  return products.map(([product, data]) => (
+                    <div key={product} className="bg-white p-4 rounded-lg border border-gray-200">
+                      <div className="text-sm font-medium text-gray-600 capitalize mb-1">
+                        {product}
+                      </div>
+                      <div className="text-2xl font-bold text-gray-900">
+                        {data.totalLiters.toFixed(2)}L
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {data.orders} order{data.orders !== 1 ? 's' : ''}
+                      </div>
+                    </div>
+                  ))
+                })()}
+              </div>
+            </div>
+          </div>
+
           <div>
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Order History</h3>
             <div className="overflow-x-auto">
@@ -451,6 +517,9 @@ export default function CustomerReport() {
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Product
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Quantity
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Total Amount
@@ -474,6 +543,9 @@ export default function CustomerReport() {
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900 capitalize">
                         {order.product}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {order.liters ? `${order.liters.toFixed(2)}L` : '-'}
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                         {formatCurrency(order.totalAmount)}
@@ -504,6 +576,57 @@ export default function CustomerReport() {
               </table>
             </div>
           </div>
+
+          {/* Payment History */}
+          {selectedCustomer.payments && selectedCustomer.payments.length > 0 && (
+            <div className="mt-8">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Payment History</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Date
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Amount
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Allocated Orders
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Notes
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {selectedCustomer.payments.map((payment) => (
+                      <tr key={payment._id} className="hover:bg-gray-50">
+                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {new Date(payment.date).toLocaleDateString()}
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-green-600">
+                          {formatCurrency(payment.amount)}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-gray-900">
+                          <div className="space-y-1">
+                            {payment.allocatedOrders.map((allocation, idx) => (
+                              <div key={idx} className="text-xs">
+                                Order: {formatCurrency(allocation.allocated)} allocated
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-sm text-gray-900">
+                          {payment.notes || '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

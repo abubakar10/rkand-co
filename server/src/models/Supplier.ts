@@ -20,3 +20,4 @@ const supplierSchema = new Schema<ISupplier>(
 export const Supplier = model<ISupplier>("Supplier", supplierSchema);
 
 
+

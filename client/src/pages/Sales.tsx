@@ -87,6 +87,15 @@ export default function Sales() {
 
   const handleCustomerInputChange = (value: string) => {
     setFormData({ ...formData, customerName: value })
+    // Add to customers list if it's a new name (so it shows in suggestions immediately)
+    if (value.trim() && !customers.includes(value.trim())) {
+      setCustomers(prev => {
+        if (!prev.includes(value.trim())) {
+          return [...prev, value.trim()].sort()
+        }
+        return prev
+      })
+    }
     if (value.trim()) {
       const filtered = customers.filter(c => 
         c.toLowerCase().includes(value.toLowerCase())
@@ -199,6 +208,8 @@ export default function Sales() {
         },
       })
       await fetchSales()
+      // Refresh customer list to include newly added customer
+      await fetchCustomers()
       setShowForm(false)
       setFormData({
         customerName: '',
