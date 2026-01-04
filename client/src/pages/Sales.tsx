@@ -11,6 +11,7 @@ interface Sale {
   liters?: number
   ratePerLitre?: number
   totalAmount: number
+  expense?: number
   imageUrl?: string
   paymentStatus: 'paid' | 'unpaid' | 'partial'
   paidAmount?: number
@@ -27,6 +28,7 @@ export default function Sales() {
     liters: '',
     ratePerLitre: '',
     totalAmount: '',
+    expense: '',
     paymentStatus: 'unpaid' as 'paid' | 'unpaid' | 'partial',
     paidAmount: '',
     notes: '',
@@ -40,6 +42,7 @@ export default function Sales() {
   const [updateData, setUpdateData] = useState({
     paymentStatus: 'unpaid' as 'paid' | 'unpaid' | 'partial',
     paidAmount: '',
+    expense: '',
     notes: '',
   })
   const [updateImage, setUpdateImage] = useState<File | null>(null)
@@ -191,6 +194,10 @@ export default function Sales() {
         formDataToSend.append('ratePerLitre', formData.ratePerLitre)
       }
       
+      if (formData.expense) {
+        formDataToSend.append('expense', formData.expense)
+      }
+      
       formDataToSend.append('paymentStatus', formData.paymentStatus)
       if (formData.paidAmount && formData.paidAmount.trim() !== '') {
         formDataToSend.append('paidAmount', formData.paidAmount)
@@ -217,6 +224,7 @@ export default function Sales() {
         liters: '',
         ratePerLitre: '',
         totalAmount: '',
+        expense: '',
         paymentStatus: 'unpaid',
         paidAmount: '',
         notes: '',
@@ -235,12 +243,16 @@ export default function Sales() {
   }
 
   const calculateTotal = () => {
+    let baseAmount = 0
     if (formData.product === 'other') {
-      return formData.totalAmount ? parseFloat(formData.totalAmount) : 0
+      baseAmount = formData.totalAmount ? parseFloat(formData.totalAmount) : 0
+    } else {
+      const liters = parseFloat(formData.liters) || 0
+      const rate = parseFloat(formData.ratePerLitre) || 0
+      baseAmount = liters * rate
     }
-    const liters = parseFloat(formData.liters) || 0
-    const rate = parseFloat(formData.ratePerLitre) || 0
-    return liters * rate
+    const expense = parseFloat(formData.expense) || 0
+    return baseAmount + expense
   }
 
   const getStatusIcon = (status: string) => {
@@ -269,6 +281,7 @@ export default function Sales() {
     setUpdateData({
       paymentStatus: sale.paymentStatus,
       paidAmount: sale.paidAmount?.toString() || '',
+      expense: sale.expense?.toString() || '',
       notes: '',
     })
     setUpdateImage(null)
@@ -288,6 +301,9 @@ export default function Sales() {
       if (updateData.paidAmount) {
         formDataToSend.append('paidAmount', updateData.paidAmount)
       }
+      if (updateData.expense !== undefined && updateData.expense !== '') {
+        formDataToSend.append('expense', updateData.expense)
+      }
       if (updateData.notes) {
         formDataToSend.append('notes', updateData.notes)
       }
@@ -305,6 +321,7 @@ export default function Sales() {
       setUpdateData({
         paymentStatus: 'unpaid',
         paidAmount: '',
+        expense: '',
         notes: '',
       })
       setUpdateImage(null)
@@ -445,21 +462,33 @@ export default function Sales() {
                   </div>
                 </>
               )}
-              {formData.product !== 'other' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Total Amount (Rs) <span className="text-xs text-gray-500">(Auto-calculated)</span>
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={calculateTotal().toFixed(2)}
-                    disabled
-                    className="input bg-gray-100"
-                    placeholder="Auto-calculated"
-                  />
-                </div>
-              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Expense (Rs) <span className="text-xs text-gray-500">(Optional - e.g., vehicle rent, transportation)</span>
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formData.expense}
+                  onChange={(e) => setFormData({ ...formData, expense: e.target.value })}
+                  className="input"
+                  placeholder="0.00"
+                  min="0"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Total Amount (Rs) <span className="text-xs text-gray-500">(Auto-calculated)</span>
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={calculateTotal().toFixed(2)}
+                  disabled
+                  className="input bg-gray-100"
+                  placeholder="Auto-calculated"
+                />
+              </div>
               <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Upload Image (Optional)
@@ -706,6 +735,12 @@ export default function Sales() {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   })}
+                  {editingSale.expense && editingSale.expense > 0 && (
+                    <span className="text-xs text-gray-500 ml-2">(Expense: Rs {editingSale.expense.toLocaleString('en-IN', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })})</span>
+                  )}
                 </p>
                 <p className="text-sm text-gray-600 mb-4">
                   <span className="font-medium">Current Status:</span> <span className="capitalize">{editingSale.paymentStatus}</span>
@@ -735,6 +770,23 @@ export default function Sales() {
                   <option value="partial">Partially Paid</option>
                   <option value="paid">Paid</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Expense (Rs) <span className="text-xs text-gray-500">(Optional)</span>
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={updateData.expense}
+                  onChange={(e) => setUpdateData({ ...updateData, expense: e.target.value })}
+                  className="input"
+                  placeholder="0.00"
+                  min="0"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Update expense (e.g., vehicle rent, transportation). Total amount will be recalculated.
+                </p>
               </div>
               {updateData.paymentStatus !== 'unpaid' && (
                 <div>

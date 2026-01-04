@@ -10,6 +10,7 @@ export interface ISupplierPurchase extends Document {
   liters?: number;
   ratePerLitre?: number;
   totalAmount: number;
+  expense?: number; // Additional expenses like vehicle rent, transportation, etc.
   paymentStatus: PaymentStatus;
   depositSlipUrl?: string;
   notes?: string;
@@ -38,6 +39,7 @@ const supplierPurchaseSchema = new Schema<ISupplierPurchase>(
       }
     },
     totalAmount: { type: Number, required: true },
+    expense: { type: Number, default: 0, min: 0 }, // Additional expenses like vehicle rent, transportation, etc.
     paymentStatus: { type: String, enum: ["paid", "unpaid", "partial"], default: "unpaid" },
     depositSlipUrl: String,
     notes: String,

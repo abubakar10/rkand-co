@@ -22,3 +22,4 @@ export const Supplier = model<ISupplier>("Supplier", supplierSchema);
 
 
 
+

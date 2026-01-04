@@ -58,6 +58,14 @@ router.post(
       }
       return true;
     }),
+    body("expense").optional().custom((value) => {
+      if (value === undefined || value === "") return true;
+      const num = parseFloat(value);
+      if (isNaN(num) || num < 0) {
+        throw new Error("Expense must be a positive number");
+      }
+      return true;
+    }),
   ],
   async (req: Request, res: Response) => {
     const errors = validationResult(req);
@@ -78,15 +86,20 @@ router.post(
       paymentStatus: req.body.paymentStatus || "unpaid",
       paidAmount: req.body.paidAmount ? parseFloat(req.body.paidAmount) : 0,
       notes: req.body.notes,
+      expense: req.body.expense ? parseFloat(req.body.expense) : 0,
     };
 
+    let baseAmount = 0;
     if (req.body.product === "other") {
-      purchaseData.totalAmount = parseFloat(req.body.totalAmount);
+      baseAmount = parseFloat(req.body.totalAmount);
     } else {
       purchaseData.liters = parseFloat(req.body.liters);
       purchaseData.ratePerLitre = parseFloat(req.body.ratePerLitre);
-      purchaseData.totalAmount = parseFloat(req.body.liters) * parseFloat(req.body.ratePerLitre);
+      baseAmount = parseFloat(req.body.liters) * parseFloat(req.body.ratePerLitre);
     }
+    
+    // Add expense to total amount
+    purchaseData.totalAmount = baseAmount + purchaseData.expense;
 
     // Validate that paidAmount doesn't exceed totalAmount
     if (purchaseData.paidAmount > purchaseData.totalAmount) {
@@ -117,6 +130,14 @@ router.put(
       }
       return true;
     }),
+    body("expense").optional().custom((value) => {
+      if (value === undefined || value === "") return true;
+      const num = parseFloat(value);
+      if (isNaN(num) || num < 0) {
+        throw new Error("Expense must be a positive number");
+      }
+      return true;
+    }),
   ],
   async (req: Request, res: Response) => {
     const errors = validationResult(req);
@@ -136,14 +157,27 @@ router.put(
         updateData.paymentStatus = req.body.paymentStatus;
       }
       
+      // Handle expense update - recalculate totalAmount if expense changes
+      if (req.body.expense !== undefined) {
+        const newExpense = parseFloat(req.body.expense) || 0;
+        updateData.expense = newExpense;
+        
+        // Recalculate totalAmount: base amount (totalAmount - old expense) + new expense
+        const oldExpense = purchase.expense || 0;
+        const baseAmount = purchase.totalAmount - oldExpense;
+        updateData.totalAmount = baseAmount + newExpense;
+      }
+      
       if (req.body.paidAmount !== undefined) {
         const paidAmount = parseFloat(req.body.paidAmount) || 0;
+        // Use updated totalAmount if expense was changed, otherwise use current totalAmount
+        const currentTotalAmount = updateData.totalAmount !== undefined ? updateData.totalAmount : purchase.totalAmount;
         // Cap paidAmount at totalAmount
-        const cappedPaidAmount = Math.min(paidAmount, purchase.totalAmount);
+        const cappedPaidAmount = Math.min(paidAmount, currentTotalAmount);
         updateData.paidAmount = cappedPaidAmount;
         
         // Automatically update payment status based on paid amount
-        if (cappedPaidAmount >= purchase.totalAmount) {
+        if (cappedPaidAmount >= currentTotalAmount) {
           updateData.paymentStatus = "paid";
         } else if (cappedPaidAmount > 0) {
           updateData.paymentStatus = "partial";
@@ -229,6 +263,14 @@ router.post(
       }
       return true;
     }),
+    body("expense").optional().custom((value) => {
+      if (value === undefined || value === "") return true;
+      const num = parseFloat(value);
+      if (isNaN(num) || num < 0) {
+        throw new Error("Expense must be a positive number");
+      }
+      return true;
+    }),
   ],
   async (req: Request, res: Response) => {
     const errors = validationResult(req);
@@ -255,21 +297,26 @@ router.post(
         paymentStatus: req.body.paymentStatus || "unpaid",
         paidAmount: req.body.paidAmount ? parseFloat(req.body.paidAmount) : 0,
         notes: req.body.notes || "",
+        expense: req.body.expense ? parseFloat(req.body.expense) : 0,
       };
 
+      let baseAmount = 0;
       if (req.body.product === "other") {
         if (!req.body.totalAmount) {
           return res.status(400).json({ message: "Total amount is required for 'other' products" });
         }
-        saleData.totalAmount = parseFloat(req.body.totalAmount);
+        baseAmount = parseFloat(req.body.totalAmount);
       } else {
         if (!req.body.liters || !req.body.ratePerLitre) {
           return res.status(400).json({ message: "Liters and rate per litre are required for this product" });
         }
         saleData.liters = parseFloat(req.body.liters);
         saleData.ratePerLitre = parseFloat(req.body.ratePerLitre);
-        saleData.totalAmount = saleData.liters * saleData.ratePerLitre;
+        baseAmount = saleData.liters * saleData.ratePerLitre;
       }
+      
+      // Add expense to total amount
+      saleData.totalAmount = baseAmount + saleData.expense;
 
       // Validate that paidAmount doesn't exceed totalAmount
       if (saleData.paidAmount > saleData.totalAmount) {
@@ -304,6 +351,14 @@ router.put(
       }
       return true;
     }),
+    body("expense").optional().custom((value) => {
+      if (value === undefined || value === "") return true;
+      const num = parseFloat(value);
+      if (isNaN(num) || num < 0) {
+        throw new Error("Expense must be a positive number");
+      }
+      return true;
+    }),
   ],
   async (req: Request, res: Response) => {
     const errors = validationResult(req);
@@ -323,14 +378,27 @@ router.put(
         updateData.paymentStatus = req.body.paymentStatus;
       }
       
+      // Handle expense update - recalculate totalAmount if expense changes
+      if (req.body.expense !== undefined) {
+        const newExpense = parseFloat(req.body.expense) || 0;
+        updateData.expense = newExpense;
+        
+        // Recalculate totalAmount: base amount (totalAmount - old expense) + new expense
+        const oldExpense = sale.expense || 0;
+        const baseAmount = sale.totalAmount - oldExpense;
+        updateData.totalAmount = baseAmount + newExpense;
+      }
+      
       if (req.body.paidAmount !== undefined) {
         const paidAmount = parseFloat(req.body.paidAmount) || 0;
+        // Use updated totalAmount if expense was changed, otherwise use current totalAmount
+        const currentTotalAmount = updateData.totalAmount !== undefined ? updateData.totalAmount : sale.totalAmount;
         // Cap paidAmount at totalAmount
-        const cappedPaidAmount = Math.min(paidAmount, sale.totalAmount);
+        const cappedPaidAmount = Math.min(paidAmount, currentTotalAmount);
         updateData.paidAmount = cappedPaidAmount;
         
         // Automatically update payment status based on paid amount
-        if (cappedPaidAmount >= sale.totalAmount) {
+        if (cappedPaidAmount >= currentTotalAmount) {
           updateData.paymentStatus = "paid";
         } else if (cappedPaidAmount > 0) {
           updateData.paymentStatus = "partial";

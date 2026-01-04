@@ -10,6 +10,7 @@ export interface ICustomerSale extends Document {
   liters?: number;
   ratePerLitre?: number;
   totalAmount: number;
+  expense?: number; // Additional expenses like vehicle rent, transportation, etc.
   imageUrl?: string;
   paymentStatus: PaymentStatus;
   paidAmount?: number;
@@ -38,6 +39,7 @@ const customerSaleSchema = new Schema<ICustomerSale>(
       }
     },
     totalAmount: { type: Number, required: true },
+    expense: { type: Number, default: 0, min: 0 }, // Additional expenses like vehicle rent, transportation, etc.
     imageUrl: String,
     paymentStatus: { type: String, enum: ["paid", "unpaid", "partial"], default: "unpaid" },
     paidAmount: { type: Number, default: 0 },
